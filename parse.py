@@ -47,7 +47,7 @@ class Parser:
 
     def parse_quotes(self, page_number):
         html = self.fetch_page(page_number)
-        soup = BeautifulSoup(html)
+        soup = BeautifulSoup(html, "html.parser")
         quote_divs = soup.find_all("div", class_="quote")
         for quote_div in quote_divs:
             quote = {}
