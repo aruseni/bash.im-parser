@@ -59,15 +59,16 @@ class Parser:
                 continue
 
             # The quote text divs contain strings of text and
-            # <br/> elements that can be skipped. Joining the
-            # text strings using \n as separator results in
-            # the quote text with line breaks preserved.
-            quote["text"] = "\n".join(
-                filter(
-                    lambda x: isinstance(x, unicode),
+            # <br> elements. Here all contents of a text div
+            # are joined with any elements replaced by \n.
+            quote["text"] = "".join(
+                map(
+                    lambda x: x if isinstance(x, unicode) else "\n",
                     text_div.contents
                 )
             )
+
+            quote["text"] = quote["text"].strip()
 
             actions_div = quote_div.find("div", class_="actions")
 
