@@ -2,7 +2,7 @@
 
 import sys
 import errno
-import urllib2
+import urllib.request
 import sqlite3
 import datetime
 
@@ -34,15 +34,15 @@ class Parser:
         return "http://bash.im/index/%s" % page_number
 
     def fetch_page(self, page_number):
-        req = urllib2.Request(
+        req = urllib.request.Request(
             url=self.get_url(page_number),
             headers={"User-Agent": self.user_agent}
         )
-        f = urllib2.urlopen(req)
+        f = urllib.request.urlopen(req)
         return f.read()
 
     def parse_all_pages(self):
-        for page_number in xrange(self.start_page, self.end_page + 1):
+        for page_number in range(self.start_page, self.end_page + 1):
             self.parse_quotes(page_number)
 
     def parse_quotes(self, page_number):
