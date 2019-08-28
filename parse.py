@@ -1,25 +1,26 @@
 #!/usr/bin/env python
 
-import sys
-import errno
-import urllib.request
-import sqlite3
 import datetime
+import errno
+import sys
+import sqlite3
+import urllib.request
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, NavigableString
+
+
+DB_FILE = "quotes.sqlite3"
+USER_AGENT = (
+    "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:68.0) "
+    "Gecko/20100101 Firefox/68.0"
+)
+
 
 class Parser:
-    db_file = "quotes.sqlite3"
-    user_agent = (
-        "Mozilla/5.0 "
-        "(X11; Ubuntu; Linux x86_64; rv:30.0) "
-        "Gecko/20100101 Firefox/30.0"
-    )
-
     def __init__(self, start_page, end_page):
         self.start_page = start_page
         self.end_page = end_page
-        self.db = sqlite3.connect(self.db_file)
+        self.db = sqlite3.connect(DB_FILE)
         self.create_table()
 
     def create_table(self):
@@ -31,76 +32,68 @@ class Parser:
         self.db.commit()
 
     def get_url(self, page_number):
-        return "http://bash.im/index/%s" % page_number
+        return "https://bash.im/index/{}".format(page_number)
 
     def fetch_page(self, page_number):
         req = urllib.request.Request(
             url=self.get_url(page_number),
-            headers={"User-Agent": self.user_agent}
+            headers={"User-Agent": USER_AGENT}
         )
-        f = urllib.request.urlopen(req)
-        return f.read()
+        with urllib.request.urlopen(req) as f:
+            response = f.read()
+        return response
 
     def parse_all_pages(self):
-        for page_number in range(self.start_page, self.end_page + 1):
+        for page_number in range(self.start_page, self.end_page+1):
+            sys.stdout.write("Parsing page {}\n".format(page_number))
             self.parse_quotes(page_number)
 
     def parse_quotes(self, page_number):
         html = self.fetch_page(page_number)
         soup = BeautifulSoup(html, "lxml")
-        quote_divs = soup.find_all("div", class_="quote")
-        for quote_div in quote_divs:
+        quote_articles = soup.find_all("article", class_="quote")
+        for quote_article in quote_articles:
             quote = {}
 
-            text_div = quote_div.find("div", class_="text")
+            text_div = quote_article.find("div", class_="quote__body")
 
-            # Skipping advertisement
-            if not text_div:
-                continue
-
-            # The quote text divs contain strings of text and
-            # <br> elements. Here all contents of a text div
-            # are joined with any elements replaced by \n.
-            quote["text"] = "".join(
-                map(
-                    lambda x: x if isinstance(x, unicode) else "\n",
-                    text_div.contents
-                )
+            quote["text"] = "\n".join(
+                i.strip() for i in text_div.contents
+                if isinstance(i, NavigableString) and i != "\n"
             )
 
-            quote["text"] = quote["text"].strip()
-
-            actions_div = quote_div.find("div", class_="actions")
-
-            quote["datetime"] = actions_div.find(
-                "span",
-                class_="date"
-            ).contents[0]
-
-            quote["id"] = actions_div.find(
+            quote["id"] = quote_article.find(
                 "a",
-                class_="id"
-            ).contents[0][1:]
+                class_="quote__header_permalink"
+            ).string[1:]
+
+            quote["datetime"] = quote_article.find(
+                "div",
+                class_="quote__header_date"
+            ).string.strip()
 
             self.write_quote(quote)
 
     def write_quote(self, quote):
         cursor = self.db.cursor()
 
-        same_id_quotes = cursor.execute(
-            "SELECT * FROM quotes WHERE id=?",
+        count = cursor.execute(
+            "SELECT count(*) FROM quotes WHERE id=?",
             (quote["id"],)
-        ).fetchall()
+        ).fetchone()
 
-        if len(same_id_quotes):
+        if count[0]:
             sys.stdout.write(
-                "Skipping quote #%s as it is already in the DB\n"
-                %
-                quote["id"]
+                "Skipping quote #{} as it is already in the DB\n".format(
+                    quote["id"]
+                )
             )
             return
 
-        dt = datetime.datetime.strptime(quote["datetime"], "%Y-%m-%d %H:%M")
+        dt = datetime.datetime.strptime(
+            quote["datetime"],
+            "%d.%m.%Y в %H:%M"
+        )
         timestamp = (dt - datetime.datetime(1970, 1, 1)).total_seconds()
 
         cursor.execute(
@@ -110,22 +103,19 @@ class Parser:
 
         self.db.commit()
 
-if __name__ == "__main__":
-    arguments = sys.argv
-    if (
-        len(arguments) == 3
-        and arguments[1].isdigit()
-        and arguments[2].isdigit()
-    ):
-        start_page = int(arguments[1])
-        end_page = int(arguments[2])
 
-        if start_page > 0 and end_page >= start_page:
-            p = Parser(start_page, end_page)
-            p.parse_all_pages()
-        else:
-            sys.stderr.write("Please check the page numbers\n")
-            sys.exit(errno.EINVAL)
-    else:
+if __name__ == "__main__":
+    args_are_numbers = all(arg.isdigit() for arg in sys.argv[1:])
+    if len(sys.argv) != 3 or not args_are_numbers:
         sys.stderr.write("Invalid arguments\n")
+        sys.exit(errno.EINVAL)
+
+    start_page = int(sys.argv[1])
+    end_page = int(sys.argv[2])
+
+    if end_page >= start_page > 0:
+        p = Parser(start_page, end_page)
+        p.parse_all_pages()
+    else:
+        sys.stderr.write("Please check the page numbers\n")
         sys.exit(errno.EINVAL)
