@@ -1,4 +1,3 @@
-*.pyc
-*.pyo
+__pycache__
 .venv
 quotes.sqlite3
